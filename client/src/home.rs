@@ -437,7 +437,7 @@ fn draw_home(
         Overlay::Error(msg) => Some((msg.as_str(), true)),
         Overlay::Output(msg) => Some((msg.as_str(), false)),
     };
-    let col = centered_col(f.area(), 64);
+    let col = centered_col(f.area(), 78);
     if col.width < 20 || f.area().height < 14 {
         return;
     }
@@ -563,7 +563,7 @@ fn draw_home(
                 "enter",
                 Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" exits", Style::default().fg(DIM)),
+            Span::styled(" exit", Style::default().fg(DIM)),
         ]
     } else {
         vec![

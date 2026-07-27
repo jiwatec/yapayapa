@@ -77,7 +77,7 @@ enum Cmd {
     /// Encrypted local outbox.
     Outbox {
         #[command(subcommand)]
-        cmd: OutboxCmd,
+        cmd: Option<OutboxCmd>,
     },
     /// LAN peers (optional local-network transport).
     Peers {
@@ -271,7 +271,7 @@ async fn run(cli: Cli, config: Config) -> anyhow::Result<()> {
         },
         Cmd::Chat { target, plain, .. } => open_chat(config, &target, !plain).await,
         Cmd::Status => commands::status(config).await,
-        Cmd::Outbox { cmd } => match cmd {
+        Cmd::Outbox { cmd } => match cmd.unwrap_or(OutboxCmd::List) {
             OutboxCmd::List => commands::outbox_list(config).await,
             OutboxCmd::Retry => commands::outbox_retry(config).await,
         },

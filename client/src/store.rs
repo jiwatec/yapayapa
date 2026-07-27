@@ -377,6 +377,14 @@ impl LocalStore {
         Ok(out)
     }
 
+    /// Delete all locally stored messages for a chat. This is a local-only
+    /// wipe — it cannot affect the other party's copy of the conversation.
+    pub fn clear_chat(&self, chat_id: &str) -> anyhow::Result<()> {
+        self.conn
+            .execute("DELETE FROM messages WHERE chat_id = ?1", params![chat_id])?;
+        Ok(())
+    }
+
     pub fn unread_count(&self, chat_id: &str) -> anyhow::Result<i64> {
         Ok(self.conn.query_row(
             "SELECT count(*) FROM messages WHERE chat_id = ?1 AND read_local = 0",

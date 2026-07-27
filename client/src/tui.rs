@@ -159,6 +159,8 @@ pub async fn run(session: &Session, target: ChatTarget) -> anyhow::Result<()> {
     let mut events = EventStream::new();
     let mut retry = tokio::time::interval(std::time::Duration::from_secs(5));
     retry.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // Two-step confirm state for the /clear command.
+    let mut clear_armed = false;
 
     loop {
         terminal.draw(|f| draw(f, session, &app))?;
@@ -191,6 +193,26 @@ pub async fn run(session: &Session, target: ChatTarget) -> anyhow::Result<()> {
                             let text = app.input.trim().to_string();
                             app.input.clear();
                             if text.is_empty() { continue; }
+
+                            // /clear — wipe the current chat's local history,
+                            // with a two-step confirm so it isn't accidental.
+                            if text == "/clear" {
+                                let chat = app.active_chat().clone();
+                                if clear_armed {
+                                    session.store.clear_chat(&chat.id)?;
+                                    app.messages = session.store.history(&chat.id, 200)?;
+                                    app.scroll_up = 0;
+                                    app.notice = Some("chat cleared".into());
+                                    clear_armed = false;
+                                } else {
+                                    clear_armed = true;
+                                    app.notice = Some(
+                                        "type /clear again to confirm (wipes local history)".into(),
+                                    );
+                                }
+                                continue;
+                            }
+                            clear_armed = false;
 
                             // /img <path> — send an encrypted image to the open
                             // chat without leaving it (mirrors `yapayapa img`).
@@ -492,7 +514,7 @@ fn draw(f: &mut ratatui::Frame, session: &Session, app: &App) {
     if let Some(n) = &app.notice {
         left.push(Span::styled(format!(" {n} "), Style::default().fg(RED)));
     }
-    let hints = " Tab chats · ↑/↓ scroll · /img <path> · Enter send · Esc quit ";
+    let hints = " Tab chats · ↑/↓ scroll · /img <path> · /clear · Enter send · Esc quit ";
     let used: usize = left
         .iter()
         .map(|s| s.content.chars().count())

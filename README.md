@@ -96,6 +96,13 @@ yapayapa open-image <message-id>  # open a received image (work in progress)
 
 Long forms (`contacts add`, `outbox retry`, `groups create`, …) still work.
 
+Inside an open chat you can also type:
+
+```bash
+/img <path>    # send an encrypted image (work in progress)
+/clear         # clear this chat's local history (type /clear twice to confirm)
+```
+
 ## How offline works
 
 With no network you can still open the app, read your history, and compose.
