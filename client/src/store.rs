@@ -340,9 +340,13 @@ impl LocalStore {
 
     pub fn history(&self, chat_id: &str, limit: usize) -> anyhow::Result<Vec<LocalMessage>> {
         let mut stmt = self.conn.prepare(
+            // Order by local insertion order (rowid), not the sender's clock:
+            // sent_at comes from each sender's own laptop, so clock skew between
+            // two peers would cluster messages by sender instead of interleaving
+            // them in true conversation order.
             "SELECT message_id, chat_id, sender_id, direction, sent_at, state, content
              FROM messages WHERE chat_id = ?1
-             ORDER BY sent_at DESC LIMIT ?2",
+             ORDER BY rowid DESC LIMIT ?2",
         )?;
         let rows = stmt.query_map(params![chat_id, limit as i64], |row| {
             Ok((
