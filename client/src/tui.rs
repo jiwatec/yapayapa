@@ -3,7 +3,10 @@
 //! timestamps and sender names, connection status, and safe terminal
 //! restore on exit (including Ctrl+C).
 
-use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    DisableBracketedPaste, EnableBracketedPaste, Event, EventStream, KeyCode, KeyEventKind,
+    KeyModifiers,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -47,7 +50,7 @@ pub(crate) struct TermGuard;
 impl TermGuard {
     pub(crate) fn new() -> anyhow::Result<Self> {
         enable_raw_mode()?;
-        execute!(std::io::stdout(), EnterAlternateScreen)?;
+        execute!(std::io::stdout(), EnterAlternateScreen, EnableBracketedPaste)?;
         Ok(Self)
     }
 }
@@ -55,7 +58,7 @@ impl TermGuard {
 impl Drop for TermGuard {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-        let _ = execute!(std::io::stdout(), LeaveAlternateScreen);
+        let _ = execute!(std::io::stdout(), LeaveAlternateScreen, DisableBracketedPaste);
     }
 }
 
@@ -168,6 +171,12 @@ pub async fn run(session: &Session, target: ChatTarget) -> anyhow::Result<()> {
                     terminal.clear()?;
                     continue;
                 }
+                if let Event::Paste(data) = ev {
+                    // Collapse newlines so a multi-line paste stays one message line.
+                    let cleaned = data.replace('\n', " ").replace('\r', " ");
+                    app.input.push_str(&cleaned);
+                    continue;
+                }
                 if let Event::Key(key) = ev {
                     if key.kind != KeyEventKind::Press {
                         continue;
@@ -182,6 +191,39 @@ pub async fn run(session: &Session, target: ChatTarget) -> anyhow::Result<()> {
                             let text = app.input.trim().to_string();
                             app.input.clear();
                             if text.is_empty() { continue; }
+
+                            // /img <path> — send an encrypted image to the open
+                            // chat without leaving it (mirrors `yapayapa img`).
+                            if let Some(rest) = text
+                                .strip_prefix("/img ")
+                                .or_else(|| text.strip_prefix("/image "))
+                            {
+                                let raw = rest.trim();
+                                if raw.is_empty() {
+                                    app.notice = Some("usage: /img <path>".into());
+                                    continue;
+                                }
+                                let path = expand_tilde(raw);
+                                let chat = app.active_chat().clone();
+                                app.notice = Some("sending image…".into());
+                                terminal.draw(|f| draw(f, session, &app))?;
+                                match send_image_in_chat(session, &chat, &path).await {
+                                    Ok(()) => {
+                                        app.notice = None;
+                                        if let Some((sink, _)) = &mut ws {
+                                            if flush_outbox(session, sink).await.is_err() {
+                                                ws = None;
+                                                app.online = false;
+                                            }
+                                        }
+                                    }
+                                    Err(e) => app.notice = Some(format!("{e}")),
+                                }
+                                app.messages = session.store.history(&chat.id, 200)?;
+                                app.scroll_up = 0;
+                                continue;
+                            }
+
                             if text.len() > MAX_TEXT_BYTES {
                                 app.notice = Some("message too long".into());
                                 continue;
@@ -450,7 +492,7 @@ fn draw(f: &mut ratatui::Frame, session: &Session, app: &App) {
     if let Some(n) = &app.notice {
         left.push(Span::styled(format!(" {n} "), Style::default().fg(RED)));
     }
-    let hints = " Tab chats · ↑/↓ scroll · Enter send · Esc quit ";
+    let hints = " Tab chats · ↑/↓ scroll · /img <path> · Enter send · Esc quit ";
     let used: usize = left
         .iter()
         .map(|s| s.content.chars().count())
@@ -463,4 +505,52 @@ fn draw(f: &mut ratatui::Frame, session: &Session, app: &App) {
         Paragraph::new(Line::from(left)).style(Style::default().bg(SURFACE)),
         rows[2],
     );
+}
+
+/// Expand a leading `~/` to the home directory (the TUI has no shell to do it).
+fn expand_tilde(p: &str) -> std::path::PathBuf {
+    if let Some(rest) = p.strip_prefix("~/") {
+        if let Some(home) = std::env::var_os("HOME") {
+            return std::path::Path::new(&home).join(rest);
+        }
+    }
+    std::path::PathBuf::from(p)
+}
+
+/// Encrypt and send an image to the chat that is currently open, reusing the
+/// same attachment pipeline as the `yapayapa img` command.
+async fn send_image_in_chat(
+    session: &Session,
+    chat: &ChatEntry,
+    path: &std::path::Path,
+) -> anyhow::Result<()> {
+    if !path.exists() {
+        anyhow::bail!("no such file: {}", path.display());
+    }
+    if chat.is_group {
+        let gid: Uuid = chat.id.parse()?;
+        crate::groups::ensure_current_key(session, gid).await?;
+        let me = session.keystore.profile.user_id;
+        let members: Vec<Uuid> = session
+            .store
+            .cached_group_members(gid)?
+            .into_iter()
+            .filter(|m| *m != me)
+            .collect();
+        if members.is_empty() {
+            anyhow::bail!("group has no other members");
+        }
+        let content = crate::attach::encrypt_and_upload(session, path, &members).await?;
+        let history_id = crate::groups::compose_group(session, gid, &content)?;
+        crate::messaging::store_outgoing_attachment(session, history_id, &content)?;
+    } else {
+        let contact = session
+            .store
+            .contact_by_id(chat.id.parse()?)?
+            .ok_or_else(|| anyhow::anyhow!("unknown contact"))?;
+        let content = crate::attach::encrypt_and_upload(session, path, &[contact.user_id]).await?;
+        let wire = compose_direct(session, &contact, &content)?;
+        crate::messaging::store_outgoing_attachment(session, wire.message_id, &content)?;
+    }
+    Ok(())
 }
