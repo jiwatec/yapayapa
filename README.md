@@ -1,7 +1,7 @@
 # YapaYapa
 
-Encrypted messaging that lives in your terminal. WhatsApp-style features,
-end-to-end encryption, works offline. Built in Rust.
+Encrypted messaging that lives in your terminal. End-to-end encrypted,
+works offline, built in Rust.
 
 **Status: MVP under active development.**
 
@@ -19,10 +19,10 @@ high-risk communication. Migration to a mature Signal/MLS library is planned.
 ## Features
 
 - End-to-end encrypted direct messages, live over WebSocket
-- Works offline: encrypted local history + outbox, auto-retry on reconnect
+- Works offline: encrypted local history and outbox, auto-retry on reconnect
 - Server queues ciphertext for offline recipients — no duplicates, ever
 - LAN mode: message peers directly over WiFi with no internet at all
-- Group chats (up to 20, roles, rotating client-generated keys)
+- Group chats (up to 20, with roles and rotating keys)
 - Encrypted image sharing (PNG/JPEG/WebP)
 - Contact verification with identity fingerprints
 - A clean full-screen terminal UI, plus plain CLI commands
@@ -40,13 +40,16 @@ yapayapa add <friend> # add a contact
 yapayapa              # open the app
 ```
 
-Running `yapayapa` with no arguments opens the home screen: press **Enter**
-to jump into your chat, type a command to run it, **ctrl+p** to pick from a
-command list, **tab** to see every command explained, **Esc** to quit.
+Running `yapayapa` with no arguments opens the home screen:
+
+- **Enter** — jump into your chat
+- **ctrl+p** — pick from a command list
+- **tab** — see every command explained
+- **Esc** — quit
 
 ## Commands
 
-The everyday ones:
+Everyday:
 
 ```bash
 yapayapa                          # home screen
@@ -58,7 +61,7 @@ yapayapa group "weekend crew"     # create a group chat
 yapayapa sync                     # push queued offline messages now
 ```
 
-The rest:
+Everything else:
 
 ```bash
 yapayapa profile                  # your username, public ID, fingerprint
@@ -84,7 +87,7 @@ DATABASE_URL=postgres://user:pass@host:5432/db BIND_ADDR=127.0.0.1:8080 \
   cargo run --release -p yapayapa-backend
 ```
 
-Or with no database at all (data lost on restart — for trying it out):
+Or with no database (data lost on restart — for trying it out):
 
 ```bash
 YAPAYAPA_MEM_STORE=1 BIND_ADDR=127.0.0.1:8080 cargo run --release -p yapayapa-backend
@@ -92,7 +95,7 @@ YAPAYAPA_MEM_STORE=1 BIND_ADDR=127.0.0.1:8080 cargo run --release -p yapayapa-ba
 
 The client talks to `http://127.0.0.1:8080` by default; set `YAPAYAPA_SERVER`
 to use a remote server. For the cloud, `render.yaml` deploys the backend to
-Render (built natively with cargo) with a hosted PostgreSQL such as Neon.
+Render (built natively with cargo) with hosted PostgreSQL such as Neon.
 
 ## Two accounts on one machine
 
@@ -115,9 +118,8 @@ yapayapa chat alice
 ## Windows client
 
 The client builds and is tested on Windows (the backend runs on Linux).
-Grab `yapayapa.exe` from the `yapayapa-windows-x86_64`
-artifact of the latest [CI run](../../actions), or build with the MSVC
-toolchain:
+Grab `yapayapa.exe` from the `yapayapa-windows-x86_64` artifact of the latest
+[CI run](../../actions), or build with the MSVC toolchain:
 
 ```powershell
 cargo build --release -p yapayapa
@@ -130,11 +132,11 @@ full-screen UI works best in Windows Terminal.
 
 ## How offline works
 
-With no network you can still open the app, read your history, and compose —
-messages queue in an encrypted local outbox and send automatically when a
+With no network you can still open the app, read your history, and compose.
+Messages queue in an encrypted local outbox and send automatically when a
 connection returns. The server holds ciphertext for offline recipients until
 they come back. If both sides are offline and not on the same LAN, the
-message simply waits in the sender's outbox.
+message waits in the sender's outbox.
 
 LAN mode is opt-in: discovery runs only while a `peers` command is active,
 peers verify each other's identity keys before exchanging anything, and the
@@ -146,7 +148,7 @@ pseudonymous ID.
 
 - One device per account; losing your keystore means losing your identity
   and history — back up your data directory
-- No forward secrecy / post-compromise security yet
+- No forward secrecy or post-compromise security yet
 - The server sees metadata: who talks to whom, when, and message sizes
 - Backend targets Linux; the client also runs on Windows
 
