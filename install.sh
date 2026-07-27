@@ -23,7 +23,7 @@ case "$os" in
   Darwin)
     case "$arch" in
       arm64 | aarch64) asset="yapayapa-macos-aarch64" ;;
-      x86_64) asset="yapayapa-macos-x86_64" ;;
+      x86_64) echo "Intel Macs have no prebuilt binary — build from source (see the README)."; exit 1 ;;
       *) echo "No prebuilt macOS binary for '$arch'."; exit 1 ;;
     esac
     ;;
