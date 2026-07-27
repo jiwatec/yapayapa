@@ -1,0 +1,20 @@
+# Render Blueprint for the YapaYapa backend.
+# Database is hosted on Neon (external) — set DATABASE_URL in the dashboard.
+services:
+  - type: web
+    name: yapayapa-backend
+    runtime: rust
+    buildCommand: cargo build --release -p yapayapa-backend
+    startCommand: ./target/release/yapayapa-backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      # Render routes traffic to port 10000 by default; bind all interfaces.
+      - key: BIND_ADDR
+        value: 0.0.0.0:10000
+      - key: RUST_LOG
+        value: info
+      # Neon connection string (use the DIRECT / non-pooled URL, sslmode=require).
+      # Set as a secret in the Render dashboard; never commit it.
+      - key: DATABASE_URL
+        sync: false

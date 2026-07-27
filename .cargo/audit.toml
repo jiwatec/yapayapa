@@ -1,0 +1,14 @@
+# cargo-audit configuration.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071 — "Marvin Attack" timing sidechannel in the `rsa`
+    # crate (no fixed release exists). The `rsa` crate is NOT part of our
+    # compiled dependency graph: `cargo tree -i rsa` reports nothing. It is
+    # present in Cargo.lock only because sqlx declares sqlx-mysql as an
+    # optional dependency and lockfiles record the full potential graph; we
+    # build sqlx with default-features = false and only the `postgres`
+    # feature, so no RSA code is ever compiled, linked, or executed.
+    # Revisit whenever sqlx or the rsa crate updates.
+    "RUSTSEC-2023-0071",
+]

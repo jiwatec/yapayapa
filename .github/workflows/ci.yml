@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: yapayapa
+          POSTGRES_PASSWORD: yapayapa-ci
+          POSTGRES_DB: yapayapa_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U yapayapa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt
+        run: cargo fmt --all --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test
+        env:
+          DATABASE_URL: postgres://yapayapa:yapayapa-ci@localhost:5432/yapayapa_test
+        run: cargo test --workspace
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: cargo audit
+        run: cargo audit
+
+  windows-client:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test client and common crates
+        run: cargo test -p yapayapa -p yapayapa-common
+
+      - name: Build release client
+        run: cargo build --release -p yapayapa
+
+      - name: Upload yapayapa.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: yapayapa-windows-x86_64
+          path: target/release/yapayapa.exe
