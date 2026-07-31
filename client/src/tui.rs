@@ -45,6 +45,29 @@ pub(crate) mod theme {
     pub const GREEN: Color = Color::Rgb(152, 195, 121);
     pub const RED: Color = Color::Rgb(224, 108, 117);
     pub const YELLOW: Color = Color::Rgb(229, 192, 123);
+
+    /// Distinct, readable name colors assigned per group member so each
+    /// speaker is easy to tell apart. `sender_color` picks one deterministically.
+    pub const SENDER_COLORS: &[Color] = &[
+        Color::Rgb(152, 195, 121), // green
+        Color::Rgb(97, 175, 239),  // blue
+        Color::Rgb(198, 120, 221), // purple
+        Color::Rgb(86, 182, 194),  // teal
+        Color::Rgb(229, 192, 123), // gold
+        Color::Rgb(236, 154, 195), // pink
+        Color::Rgb(129, 200, 190), // mint
+        Color::Rgb(212, 154, 106), // amber
+    ];
+}
+
+/// Stable per-user name color from the palette (same user, same color across
+/// launches), so group members keep a consistent, distinct color.
+fn sender_color(id: Uuid) -> ratatui::style::Color {
+    let sum = id
+        .as_bytes()
+        .iter()
+        .fold(0u32, |acc, &b| acc.wrapping_add(b as u32));
+    theme::SENDER_COLORS[sum as usize % theme::SENDER_COLORS.len()]
 }
 
 pub(crate) struct TermGuard;
@@ -566,39 +589,60 @@ fn draw(f: &mut ratatui::Frame, session: &Session, app: &App) {
         cols[0],
     );
 
-    // Conversation.
+    // Conversation. Chat-app styling: your own messages are right-aligned,
+    // the other side's are left-aligned, consecutive messages from the same
+    // speaker are grouped (name shown once, blank line between speakers).
     let me = session.keystore.profile.user_id;
     let mut lines: Vec<Line> = Vec::new();
+    let mut prev_sender: Option<Uuid> = None;
     for m in &app.messages {
-        let who = if m.sender_id == me {
-            "me".to_string()
-        } else {
-            session
+        let is_me = m.sender_id == me;
+        let new_speaker = prev_sender != Some(m.sender_id);
+        // Breathing room between different speakers' runs.
+        if new_speaker && prev_sender.is_some() {
+            lines.push(Line::from(""));
+        }
+        // Sender label once per run — only for the other side; right alignment
+        // already marks your own messages.
+        if new_speaker && !is_me {
+            let who = session
                 .store
                 .contact_by_id(m.sender_id)
                 .ok()
                 .flatten()
                 .map(|c| c.username)
-                .unwrap_or_else(|| "?".into())
-        };
-        let state = if m.direction == "out" {
-            format!(" {}", m.state.symbol())
+                .unwrap_or_else(|| "?".into());
+            // Per-speaker color in groups so everyone is distinct; a single
+            // 1:1 partner just stays green.
+            let name_color = if app.active_chat().is_group {
+                sender_color(m.sender_id)
+            } else {
+                GREEN
+            };
+            lines.push(Line::from(Span::styled(
+                who,
+                Style::default().fg(name_color).add_modifier(Modifier::BOLD),
+            )));
+        }
+        let time = format!("{}", m.sent_at.format("%H:%M"));
+        let body = render_content(&m.content);
+        if is_me {
+            let state = format!(" {}", m.state.symbol());
+            lines.push(
+                Line::from(vec![
+                    Span::styled(body, Style::default().fg(TEXT)),
+                    Span::styled(format!("  {time}"), Style::default().fg(DIM)),
+                    Span::styled(state, Style::default().fg(DIM)),
+                ])
+                .right_aligned(),
+            );
         } else {
-            String::new()
-        };
-        let color = if m.sender_id == me { ACCENT } else { GREEN };
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("{} ", m.sent_at.format("%H:%M")),
-                Style::default().fg(DIM),
-            ),
-            Span::styled(
-                format!("{who} "),
-                Style::default().fg(color).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(render_content(&m.content), Style::default().fg(TEXT)),
-            Span::styled(state, Style::default().fg(DIM)),
-        ]));
+            lines.push(Line::from(vec![
+                Span::styled(format!("{time}  "), Style::default().fg(DIM)),
+                Span::styled(body, Style::default().fg(TEXT)),
+            ]));
+        }
+        prev_sender = Some(m.sender_id);
     }
     let inner_height = cols[1].height.saturating_sub(2);
     let total = lines.len() as u16;
