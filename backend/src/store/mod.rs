@@ -133,6 +133,8 @@ pub trait Store: Send + Sync {
     // -- contacts ---------------------------------------------------------
     async fn add_contact(&self, user_id: Uuid, contact_id: Uuid) -> Result<()>;
     async fn list_contacts(&self, user_id: Uuid) -> Result<Vec<(UserRecord, DateTime<Utc>)>>;
+    /// Removes `contact_id` from `user_id`'s contacts (one direction only).
+    async fn remove_contact(&self, user_id: Uuid, contact_id: Uuid) -> Result<()>;
 
     // -- message queue ----------------------------------------------------
     /// Insert if `message_id` is new. Returns false on duplicate (idempotent).
@@ -172,6 +174,10 @@ pub trait Store: Send + Sync {
     ) -> Result<i64>;
     /// Removes a member and bumps the key epoch. Returns the new epoch.
     async fn remove_group_member(&self, group_id: Uuid, user_id: Uuid) -> Result<i64>;
+    /// Deletes a group and all its membership rows.
+    async fn delete_group(&self, group_id: Uuid) -> Result<()>;
+    /// Promotes an existing member to owner (used when the owner leaves).
+    async fn set_group_owner(&self, group_id: Uuid, user_id: Uuid) -> Result<()>;
 
     // -- attachments --------------------------------------------------------
     async fn insert_attachment(

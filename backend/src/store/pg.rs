@@ -146,6 +146,15 @@ impl Store for PgStore {
         Ok(())
     }
 
+    async fn remove_contact(&self, user_id: Uuid, contact_id: Uuid) -> Result<()> {
+        sqlx::query("DELETE FROM contacts WHERE user_id = $1 AND contact_id = $2")
+            .bind(user_id)
+            .bind(contact_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     async fn list_contacts(&self, user_id: Uuid) -> Result<Vec<(UserRecord, DateTime<Utc>)>> {
         let q = "SELECT u.id, u.public_id, u.username, u.password_hash, u.sign_pub, u.dh_pub,
                     u.dh_pub_sig, u.created_at, c.added_at
@@ -425,6 +434,32 @@ impl Store for PgStore {
         .get("key_epoch");
         tx.commit().await?;
         Ok(epoch)
+    }
+
+    async fn delete_group(&self, group_id: Uuid) -> Result<()> {
+        // group_members cascades on the groups FK.
+        let res = sqlx::query("DELETE FROM groups WHERE id = $1")
+            .bind(group_id)
+            .execute(&self.pool)
+            .await?;
+        if res.rows_affected() == 0 {
+            return Err(StoreError::NotFound);
+        }
+        Ok(())
+    }
+
+    async fn set_group_owner(&self, group_id: Uuid, user_id: Uuid) -> Result<()> {
+        let res = sqlx::query(
+            "UPDATE group_members SET role = 'owner' WHERE group_id = $1 AND user_id = $2",
+        )
+        .bind(group_id)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await?;
+        if res.rows_affected() == 0 {
+            return Err(StoreError::NotFound);
+        }
+        Ok(())
     }
 
     async fn insert_attachment(

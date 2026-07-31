@@ -117,6 +117,14 @@ impl Store for MemStore {
         Ok(())
     }
 
+    async fn remove_contact(&self, user_id: Uuid, contact_id: Uuid) -> Result<()> {
+        let mut g = self.inner.lock().unwrap();
+        if let Some(list) = g.contacts.get_mut(&user_id) {
+            list.retain(|(c, _)| *c != contact_id);
+        }
+        Ok(())
+    }
+
     async fn list_contacts(&self, user_id: Uuid) -> Result<Vec<(UserRecord, DateTime<Utc>)>> {
         let g = self.inner.lock().unwrap();
         let mut out: Vec<(UserRecord, DateTime<Utc>)> = g
@@ -301,6 +309,24 @@ impl Store for MemStore {
         let grp = g.groups.get_mut(&group_id).ok_or(StoreError::NotFound)?;
         grp.key_epoch += 1;
         Ok(grp.key_epoch)
+    }
+
+    async fn delete_group(&self, group_id: Uuid) -> Result<()> {
+        let mut g = self.inner.lock().unwrap();
+        g.members.remove(&group_id);
+        g.groups.remove(&group_id).ok_or(StoreError::NotFound)?;
+        Ok(())
+    }
+
+    async fn set_group_owner(&self, group_id: Uuid, user_id: Uuid) -> Result<()> {
+        let mut g = self.inner.lock().unwrap();
+        let list = g.members.get_mut(&group_id).ok_or(StoreError::NotFound)?;
+        let m = list
+            .iter_mut()
+            .find(|(u, _, _)| *u == user_id)
+            .ok_or(StoreError::NotFound)?;
+        m.1 = GroupRole::Owner;
+        Ok(())
     }
 
     async fn insert_attachment(

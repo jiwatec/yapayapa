@@ -314,6 +314,25 @@ async fn lookup_and_contacts() {
     let contacts: Vec<serde_json::Value> = resp.json().await.unwrap();
     assert_eq!(contacts.len(), 1);
     assert_eq!(contacts[0]["user"]["username"], "bob");
+
+    // Remove the contact; the list goes empty and stays that way.
+    let resp = s
+        .client
+        .delete(format!("{}/api/contacts/bob", s.base))
+        .bearer_auth(&alice.auth.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 204);
+    let resp = s
+        .client
+        .get(format!("{}/api/contacts", s.base))
+        .bearer_auth(&alice.auth.token)
+        .send()
+        .await
+        .unwrap();
+    let contacts: Vec<serde_json::Value> = resp.json().await.unwrap();
+    assert!(contacts.is_empty());
 }
 
 // ---------------------------------------------------------------------------
@@ -697,6 +716,110 @@ async fn group_roles_cap_and_epoch() {
     assert_eq!(resp.status(), 409);
     let text = resp.text().await.unwrap();
     assert!(text.contains("full"), "unexpected error: {text}");
+}
+
+#[tokio::test]
+async fn only_owner_can_delete_group() {
+    let s = spawn_server().await;
+    let owner = s.register("owner").await;
+    let member = s.register("member1").await;
+    let outsider = s.register("outsider").await;
+    let group = create_group(&s, &owner, "Doomed").await;
+    add_member(&s, &owner, group.group_id, "member1").await;
+
+    let del = |user: &TestUser| {
+        s.client
+            .delete(format!("{}/api/groups/{}", s.base, group.group_id))
+            .bearer_auth(&user.auth.token)
+            .send()
+    };
+
+    // A non-member and a plain member cannot delete.
+    assert_eq!(del(&outsider).await.unwrap().status(), 403);
+    assert_eq!(del(&member).await.unwrap().status(), 403);
+
+    // The owner can; afterwards the group is gone (404/403 on view).
+    assert_eq!(del(&owner).await.unwrap().status(), 204);
+    let view = s
+        .client
+        .get(format!("{}/api/groups/{}", s.base, group.group_id))
+        .bearer_auth(&owner.auth.token)
+        .send()
+        .await
+        .unwrap();
+    assert!(
+        view.status() == 403 || view.status() == 404,
+        "deleted group still viewable: {}",
+        view.status()
+    );
+}
+
+#[tokio::test]
+async fn owner_leaving_transfers_to_oldest_member() {
+    let s = spawn_server().await;
+    let owner = s.register("owner").await;
+    let m1 = s.register("member1").await;
+    let m2 = s.register("member2").await;
+    let group = create_group(&s, &owner, "Legacy").await;
+    add_member(&s, &owner, group.group_id, "member1").await; // joins first
+    add_member(&s, &owner, group.group_id, "member2").await;
+
+    // Owner leaves (self-remove) -> ownership should pass to member1.
+    let resp = s
+        .client
+        .delete(format!("{}/api/groups/{}/members/owner", s.base, group.group_id))
+        .bearer_auth(&owner.auth.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // member2 (not the new owner) still can't delete; member1 (new owner) can.
+    let d2 = s
+        .client
+        .delete(format!("{}/api/groups/{}", s.base, group.group_id))
+        .bearer_auth(&m2.auth.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(d2.status(), 403);
+    let d1 = s
+        .client
+        .delete(format!("{}/api/groups/{}", s.base, group.group_id))
+        .bearer_auth(&m1.auth.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(d1.status(), 204);
+}
+
+#[tokio::test]
+async fn last_owner_leaving_deletes_the_group() {
+    let s = spawn_server().await;
+    let owner = s.register("solo").await;
+    let group = create_group(&s, &owner, "Alone").await;
+
+    // Owner is the only member; leaving deletes the group.
+    let resp = s
+        .client
+        .delete(format!("{}/api/groups/{}/members/solo", s.base, group.group_id))
+        .bearer_auth(&owner.auth.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let info: GroupInfo = resp.json().await.unwrap();
+    assert!(info.members.is_empty());
+
+    // The group is gone.
+    let view = s
+        .client
+        .get(format!("{}/api/groups/{}", s.base, group.group_id))
+        .bearer_auth(&owner.auth.token)
+        .send()
+        .await
+        .unwrap();
+    assert!(view.status() == 403 || view.status() == 404);
 }
 
 // ---------------------------------------------------------------------------

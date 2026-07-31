@@ -222,6 +222,16 @@ async fn add_contact(
     Ok(Json(user_public(&contact)))
 }
 
+async fn remove_contact(
+    State(state): State<Arc<AppState>>,
+    auth: AuthUser,
+    Path(selector): Path<String>,
+) -> Result<StatusCode, ApiErr> {
+    let contact = resolve_user(&state, &selector).await?;
+    state.store.remove_contact(auth.user_id, contact.id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn list_contacts(
     State(state): State<Arc<AppState>>,
     auth: AuthUser,
@@ -361,7 +371,45 @@ async fn remove_member(
         }
     }
     state.store.remove_group_member(group_id, target.id).await?;
+    // When the owner leaves, hand ownership to the oldest remaining member so
+    // the group stays manageable; if nobody's left, the group is deleted.
+    if target_role == GroupRole::Owner {
+        let mut remaining = state.store.group_members(group_id).await?;
+        remaining.sort_by_key(|m| m.joined_at);
+        match remaining.first() {
+            Some(next) => state.store.set_group_owner(group_id, next.user.id).await?,
+            None => {
+                let rec = state.store.group_by_id(group_id).await?;
+                state.store.delete_group(group_id).await?;
+                if let Some(rec) = rec {
+                    return Ok(Json(GroupInfo {
+                        group_id,
+                        name: rec.name,
+                        created_at: rec.created_at,
+                        key_epoch: rec.key_epoch,
+                        members: vec![],
+                    }));
+                }
+            }
+        }
+    }
     group_info(&state, group_id).await.map(Json)
+}
+
+async fn delete_group(
+    State(state): State<Arc<AppState>>,
+    auth: AuthUser,
+    Path(group_id): Path<Uuid>,
+) -> Result<StatusCode, ApiErr> {
+    let role = require_member(&state, group_id, auth.user_id).await?;
+    if role != GroupRole::Owner {
+        return Err(ApiErr(
+            StatusCode::FORBIDDEN,
+            "only the group owner can delete the group".into(),
+        ));
+    }
+    state.store.delete_group(group_id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ---------------------------------------------------------------------------
@@ -460,8 +508,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/me", get(me))
         .route("/api/users/{selector}", get(lookup))
         .route("/api/contacts", post(add_contact).get(list_contacts))
+        .route("/api/contacts/{selector}", delete(remove_contact))
         .route("/api/groups", post(create_group).get(list_groups))
-        .route("/api/groups/{group_id}", get(get_group))
+        .route("/api/groups/{group_id}", get(get_group).delete(delete_group))
         .route("/api/groups/{group_id}/members", post(add_member))
         .route(
             "/api/groups/{group_id}/members/{selector}",
