@@ -219,6 +219,11 @@ pub enum ServerFrame {
 pub enum ChatContent {
     Text {
         body: String,
+        /// Optional id of the message this one is a reply to (WhatsApp-style
+        /// quote). E2E-only: the server never sees it. Absent on the wire for
+        /// non-replies, and old clients simply ignore it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reply_to: Option<Uuid>,
     },
     /// Encrypted image attachment: blob is stored server-side, but the key
     /// travels only here, inside the sealed envelope.
@@ -262,4 +267,35 @@ pub struct GroupBody {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiError {
     pub error: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_reply_to_is_wire_compatible() {
+        // A non-reply serializes with no `reply_to` key, so its bytes are
+        // identical to what an older client (pre-reply) produced/expects.
+        let plain = ChatContent::Text {
+            body: "hi".into(),
+            reply_to: None,
+        };
+        let json = serde_json::to_string(&plain).unwrap();
+        assert_eq!(json, r#"{"kind":"text","body":"hi"}"#);
+
+        // An old-format message (no `reply_to`) still deserializes.
+        let back: ChatContent = serde_json::from_str(r#"{"kind":"text","body":"hi"}"#).unwrap();
+        assert!(matches!(back, ChatContent::Text { reply_to: None, .. }));
+
+        // A reply round-trips.
+        let id = Uuid::new_v4();
+        let reply = ChatContent::Text {
+            body: "yes".into(),
+            reply_to: Some(id),
+        };
+        let round: ChatContent =
+            serde_json::from_str(&serde_json::to_string(&reply).unwrap()).unwrap();
+        assert!(matches!(round, ChatContent::Text { reply_to: Some(r), .. } if r == id));
+    }
 }

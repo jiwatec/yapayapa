@@ -146,6 +146,23 @@ impl Api {
         Self::handle(self.req(reqwest::Method::GET, "/api/contacts").send().await).await
     }
 
+    pub async fn remove_contact(&self, selector: &str) -> Result<(), ApiErr> {
+        let resp = self
+            .req(reqwest::Method::DELETE, &format!("/api/contacts/{selector}"))
+            .send()
+            .await
+            .map_err(|e| ApiErr::Offline(e.to_string()))?;
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            let msg = match resp.json::<ApiError>().await {
+                Ok(e) => e.error,
+                Err(_) => "remove failed".to_string(),
+            };
+            Err(ApiErr::Server(msg))
+        }
+    }
+
     // -- groups -------------------------------------------------------------
 
     pub async fn create_group(&self, name: &str) -> Result<GroupInfo, ApiErr> {
@@ -198,6 +215,23 @@ impl Api {
             .await,
         )
         .await
+    }
+
+    pub async fn delete_group(&self, group_id: Uuid) -> Result<(), ApiErr> {
+        let resp = self
+            .req(reqwest::Method::DELETE, &format!("/api/groups/{group_id}"))
+            .send()
+            .await
+            .map_err(|e| ApiErr::Offline(e.to_string()))?;
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            let msg = match resp.json::<ApiError>().await {
+                Ok(e) => e.error,
+                Err(_) => "delete failed".to_string(),
+            };
+            Err(ApiErr::Server(msg))
+        }
     }
 
     // -- attachments ----------------------------------------------------------

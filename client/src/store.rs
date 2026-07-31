@@ -273,6 +273,15 @@ impl LocalStore {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    /// Forget a contact locally (after removing them from your chats).
+    pub fn delete_contact(&self, user_id: Uuid) -> anyhow::Result<()> {
+        self.conn.execute(
+            "DELETE FROM contacts WHERE user_id = ?1",
+            params![user_id.to_string()],
+        )?;
+        Ok(())
+    }
+
     pub fn set_verified(&self, user_id: Uuid, verified: bool) -> anyhow::Result<()> {
         self.conn.execute(
             "UPDATE contacts SET verified = ?2 WHERE user_id = ?1",
@@ -573,6 +582,19 @@ impl LocalStore {
         Ok(out)
     }
 
+    /// Forget a group locally (after leaving or deleting it): drops its
+    /// metadata, cached members, and content keys.
+    pub fn delete_group_local(&self, group_id: Uuid) -> anyhow::Result<()> {
+        let gid = group_id.to_string();
+        self.conn
+            .execute("DELETE FROM group_members_cache WHERE group_id = ?1", params![gid])?;
+        self.conn
+            .execute("DELETE FROM group_keys WHERE group_id = ?1", params![gid])?;
+        self.conn
+            .execute("DELETE FROM groups WHERE group_id = ?1", params![gid])?;
+        Ok(())
+    }
+
     // -- attachments ----------------------------------------------------------
 
     pub fn store_attachment(&self, message_id: Uuid, info: &AttachmentInfo) -> anyhow::Result<()> {
@@ -667,7 +689,7 @@ mod tests {
     }
 
     fn text(body: &str) -> ChatContent {
-        ChatContent::Text { body: body.into() }
+        ChatContent::Text { body: body.into(), reply_to: None }
     }
 
     #[test]
@@ -702,7 +724,7 @@ mod tests {
 
         let h = s.history(&chat, 50).unwrap();
         assert_eq!(h.len(), 1);
-        assert!(matches!(&h[0].content, ChatContent::Text { body } if body == "hi"));
+        assert!(matches!(&h[0].content, ChatContent::Text { body, .. } if body == "hi"));
 
         // State advances but never regresses.
         s.set_state(mid, LocalState::Delivered).unwrap();

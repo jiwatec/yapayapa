@@ -65,6 +65,14 @@ install -Dm755 target/release/yapayapa ~/.local/bin/yapayapa
 Messages are delivered live, or queued and delivered later if the other person
 is offline.
 
+For a group, create one and open it; add people from inside the chat with
+`/add <user>` (they need to have added you as a contact first):
+
+```bash
+yapayapa group "weekend crew"     # prints the group id
+yapayapa chat <group-id>          # open it, then type /add <user>
+```
+
 ## Commands
 
 Everyday:
@@ -74,7 +82,7 @@ yapayapa                          # home screen
 yapayapa chat bob                 # full-screen encrypted chat
 yapayapa add bob                  # add a contact (username or yp_ public ID)
 yapayapa friends                  # list your contacts
-yapayapa img bob ./photo.png      # send an encrypted image (work in progress)
+yapayapa img bob ./photo.png      # send an encrypted image
 yapayapa group "weekend crew"     # create a group chat
 yapayapa sync                     # push queued offline messages now
 ```
@@ -96,12 +104,39 @@ yapayapa open-image <message-id>  # open a received image (work in progress)
 
 Long forms (`contacts add`, `outbox retry`, `groups create`, …) still work.
 
-Inside an open chat you can also type:
+## Inside a chat
+
+The full-screen chat window right-aligns your own messages, groups consecutive
+messages from the same person, and gives every member of a group their own
+color so it reads like a normal chat.
+
+Type `/` to pop up a command menu — the commands available in this chat, with a
+short description each. Arrow keys to pick, `Enter` to run, `Tab` to complete:
 
 ```bash
-/img <path>    # send an encrypted image (work in progress)
-/clear         # clear this chat's local history (type /clear twice to confirm)
+/img <path>    # send an encrypted image to this chat
+/images        # browse received images, Enter opens one in your viewer
+/verify        # compare fingerprints and mark verified   (1:1 chats only)
+/remove        # remove this contact and clear the chat   (1:1 chats only)
+/add <user>    # add someone to this group                (group chats only)
+/remove <user> # remove someone from this group           (group chats only)
+/members       # list this group's members                (group chats only)
+/leave         # leave this group                         (group chats only)
+/delete        # delete this group for everyone           (owner only)
+/clear         # clear this chat's local history           (type /clear twice to confirm)
 ```
+
+Keys:
+
+| Key      | Action                                                             |
+| -------- | ------------------------------------------------------------------ |
+| `Tab`    | switch between chats                                                |
+| `↑` `↓`  | scroll the history                                                 |
+| `Ctrl+R` | reply to a message — pick one with `↑`/`↓`, `Enter` to quote it     |
+| `Esc`    | cancel a reply, then leave the chat                                |
+
+Group membership and keys sync automatically when you open a group, so new
+members show up without any manual step.
 
 ## How offline works
 

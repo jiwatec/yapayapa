@@ -74,14 +74,24 @@ const COMMANDS: &[(&str, &str, PaletteAction)] = &[
         PaletteAction::Prefill("add "),
     ),
     (
+        "find <user>",
+        "look up a user without adding them",
+        PaletteAction::Prefill("find "),
+    ),
+    (
         "friends",
         "list your contacts",
         PaletteAction::Exec("friends"),
     ),
     (
         "group <name>",
-        "create a group chat",
+        "create a new group chat",
         PaletteAction::Prefill("group "),
+    ),
+    (
+        "groups",
+        "list your groups (open one to add/remove members)",
+        PaletteAction::Exec("groups list"),
     ),
     (
         "img <to> <file>",
@@ -99,9 +109,19 @@ const COMMANDS: &[(&str, &str, PaletteAction)] = &[
         PaletteAction::Exec("status"),
     ),
     (
-        "verify <user>",
-        "compare fingerprints with a contact",
-        PaletteAction::Prefill("verify "),
+        "outbox",
+        "show queued not-yet-sent messages",
+        PaletteAction::Exec("outbox"),
+    ),
+    (
+        "attachments",
+        "list images you've received",
+        PaletteAction::Exec("attachments list"),
+    ),
+    (
+        "peers",
+        "discover other users on your LAN",
+        PaletteAction::Exec("peers list"),
     ),
     (
         "profile",
@@ -109,9 +129,9 @@ const COMMANDS: &[(&str, &str, PaletteAction)] = &[
         PaletteAction::Exec("profile"),
     ),
     (
-        "outbox",
-        "show queued not-yet-sent messages",
-        PaletteAction::Exec("outbox"),
+        "identity",
+        "show your identity public key",
+        PaletteAction::Exec("identity"),
     ),
 ];
 
@@ -153,6 +173,14 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
                 Err(e) => notice = Some((format!("{e}"), false)),
             },
             HomeAction::Exec(line) => {
+                // Subcommand groups need a default so a bare word doesn't dump
+                // clap's usage: `groups` -> `groups list`, etc.
+                let line = match line.trim() {
+                    "groups" => "groups list".to_string(),
+                    "peers" => "peers list".to_string(),
+                    "attachments" => "attachments list".to_string(),
+                    _ => line,
+                };
                 if is_command(&line) {
                     // Captured re-run of the CLI: both output and errors show
                     // inline on the home screen's input box.
@@ -590,8 +618,9 @@ fn draw_home(
 /// The command list, centered. With a cursor it is the interactive palette;
 /// without one it is the Tab reference (any key closes).
 fn draw_command_box(f: &mut ratatui::Frame, cursor: Option<usize>) {
-    let height = COMMANDS.len() as u16 + 3;
-    let width = 64u16;
+    // Clamp so a long list still fits on short terminals (extra rows clip).
+    let height = (COMMANDS.len() as u16 + 3).min(f.area().height);
+    let width = 72u16;
     let [area] = Layout::horizontal([Constraint::Length(width)])
         .flex(Flex::Center)
         .areas(f.area());
@@ -625,7 +654,7 @@ fn draw_command_box(f: &mut ratatui::Frame, cursor: Option<usize>) {
                 if is_sel { "▌ " } else { "  " },
                 Style::default().fg(ACCENT),
             ),
-            Span::styled(format!("{name:<16}"), name_style),
+            Span::styled(format!("{name:<22}"), name_style),
             Span::styled((*desc).to_string(), Style::default().fg(DIM)),
         ]);
         if is_sel {

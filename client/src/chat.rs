@@ -128,7 +128,7 @@ pub async fn run_chat(session: &Session, target: ChatTarget) -> anyhow::Result<(
                     prompt();
                     continue;
                 }
-                let content = ChatContent::Text { body: text.to_string() };
+                let content = ChatContent::Text { body: text.to_string(), reply_to: None };
                 let result: anyhow::Result<()> = (|| {
                     match &target {
                         ChatTarget::Direct(contact) => {

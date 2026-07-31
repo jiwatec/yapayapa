@@ -337,7 +337,7 @@ pub fn store_outgoing_attachment(
 
 pub fn render_content(content: &ChatContent) -> String {
     match content {
-        ChatContent::Text { body } => body.clone(),
+        ChatContent::Text { body, .. } => body.clone(),
         ChatContent::Image {
             attachment_id,
             filename,
