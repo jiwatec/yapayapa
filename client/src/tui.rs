@@ -13,10 +13,12 @@ use crossterm::terminal::{
 };
 use futures_util::StreamExt;
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, Padding, Paragraph, Wrap};
+use ratatui::widgets::{
+    Block, BorderType, Borders, Clear, List, ListItem, Padding, Paragraph, Wrap,
+};
 use ratatui::Terminal;
 use uuid::Uuid;
 use yapayapa_common::types::ChatContent;
@@ -78,11 +80,83 @@ struct App {
     scroll_up: u16,
     online: bool,
     notice: Option<String>,
+    /// Highlighted row in the `/` command menu (when it's showing).
+    menu_sel: usize,
 }
 
 impl App {
     fn active_chat(&self) -> &ChatEntry {
         &self.chats[self.active]
+    }
+}
+
+/// A slash command offered by the `/` command menu inside a chat.
+struct SlashCmd {
+    /// Word after the slash, e.g. "add" for `/add`.
+    name: &'static str,
+    /// Full usage shown in the menu, e.g. "/add <user>".
+    usage: &'static str,
+    /// One-line description of what it does.
+    desc: &'static str,
+    /// Whether it expects an argument (so completing leaves a trailing space).
+    takes_arg: bool,
+    /// Only offered while a group chat is open.
+    group_only: bool,
+}
+
+const SLASH_COMMANDS: &[SlashCmd] = &[
+    SlashCmd {
+        name: "add",
+        usage: "/add <user>",
+        desc: "add a member to this group",
+        takes_arg: true,
+        group_only: true,
+    },
+    SlashCmd {
+        name: "members",
+        usage: "/members",
+        desc: "list this group's members",
+        takes_arg: false,
+        group_only: true,
+    },
+    SlashCmd {
+        name: "img",
+        usage: "/img <path>",
+        desc: "send an encrypted image",
+        takes_arg: true,
+        group_only: false,
+    },
+    SlashCmd {
+        name: "clear",
+        usage: "/clear",
+        desc: "wipe this chat's local history",
+        takes_arg: false,
+        group_only: false,
+    },
+];
+
+/// Commands the `/` menu should show for the current input: only while the
+/// user is typing a command word (input starts with `/`, no space yet), the
+/// name prefix-matches, and group-only commands are hidden in direct chats.
+fn command_matches(app: &App) -> Vec<&'static SlashCmd> {
+    if !app.input.starts_with('/') || app.input.contains(' ') {
+        return Vec::new();
+    }
+    let prefix = &app.input[1..];
+    let is_group = app.active_chat().is_group;
+    SLASH_COMMANDS
+        .iter()
+        .filter(|c| (is_group || !c.group_only) && c.name.starts_with(prefix))
+        .collect()
+}
+
+/// The currently highlighted command in the menu, if the menu is showing.
+fn selected_command(app: &App) -> Option<&'static SlashCmd> {
+    let matches = command_matches(app);
+    if matches.is_empty() {
+        None
+    } else {
+        Some(matches[app.menu_sel.min(matches.len() - 1)])
     }
 }
 
@@ -138,6 +212,7 @@ pub async fn run(session: &Session, target: ChatTarget) -> anyhow::Result<()> {
         scroll_up: 0,
         online: false,
         notice: None,
+        menu_sel: 0,
     };
     app.messages = session.store.history(&app.active_chat().id.clone(), 200)?;
     session
@@ -199,6 +274,18 @@ pub async fn run(session: &Session, target: ChatTarget) -> anyhow::Result<()> {
                     }
                     match key.code {
                         KeyCode::Enter => {
+                            // The `/` command menu is open: Enter accepts the
+                            // highlighted command. Commands that take an argument
+                            // just complete the input and wait for it; no-arg
+                            // commands complete and fall through to run now.
+                            if let Some(cmd) = selected_command(&app) {
+                                app.menu_sel = 0;
+                                if cmd.takes_arg {
+                                    app.input = format!("/{} ", cmd.name);
+                                    continue;
+                                }
+                                app.input = format!("/{}", cmd.name);
+                            }
                             let text = app.input.trim().to_string();
                             app.input.clear();
                             if text.is_empty() { continue; }
@@ -255,6 +342,50 @@ pub async fn run(session: &Session, target: ChatTarget) -> anyhow::Result<()> {
                                 continue;
                             }
 
+                            // /members — list the current group's members,
+                            // straight from the local cache (refreshed on open).
+                            if text == "/members" {
+                                let chat = app.active_chat().clone();
+                                match group_members_line(session, &chat) {
+                                    Ok(line) => app.notice = Some(line),
+                                    Err(e) => app.notice = Some(format!("{e}")),
+                                }
+                                continue;
+                            }
+
+                            // /add <user> — add someone to the open group chat
+                            // without dropping to the terminal (also dodges the
+                            // `groups` shell-builtin collision). Mirrors
+                            // `yapayapa groups add-member`.
+                            if let Some(rest) = text
+                                .strip_prefix("/add ")
+                                .or_else(|| text.strip_prefix("/addmember "))
+                            {
+                                let user = rest.trim().to_string();
+                                if user.is_empty() {
+                                    app.notice = Some("usage: /add <username>".into());
+                                    continue;
+                                }
+                                let chat = app.active_chat().clone();
+                                app.notice = Some(format!("adding {user}…"));
+                                terminal.draw(|f| draw(f, session, &app))?;
+                                match add_member_in_chat(session, &chat, &user).await {
+                                    Ok(line) => {
+                                        app.notice = Some(line);
+                                        // Flush the queued per-member key
+                                        // envelopes so the new member can decrypt.
+                                        if let Some((sink, _)) = &mut ws {
+                                            if flush_outbox(session, sink).await.is_err() {
+                                                ws = None;
+                                                app.online = false;
+                                            }
+                                        }
+                                    }
+                                    Err(e) => app.notice = Some(format!("{e}")),
+                                }
+                                continue;
+                            }
+
                             if text.len() > MAX_TEXT_BYTES {
                                 app.notice = Some("message too long".into());
                                 continue;
@@ -284,13 +415,30 @@ pub async fn run(session: &Session, target: ChatTarget) -> anyhow::Result<()> {
                             app.messages = session.store.history(&chat.id, 200)?;
                             app.scroll_up = 0;
                         }
-                        KeyCode::Backspace => { app.input.pop(); }
-                        KeyCode::Char(c) => { app.input.push(c); }
+                        KeyCode::Backspace => { app.input.pop(); app.menu_sel = 0; }
+                        KeyCode::Char(c) => { app.input.push(c); app.menu_sel = 0; }
+                        // While the `/` menu is open, ↑/↓ move the selection;
+                        // otherwise they scroll the conversation as before.
+                        KeyCode::Up | KeyCode::PageUp if !command_matches(&app).is_empty() => {
+                            app.menu_sel = app.menu_sel.saturating_sub(1);
+                        }
+                        KeyCode::Down | KeyCode::PageDown if !command_matches(&app).is_empty() => {
+                            let last = command_matches(&app).len().saturating_sub(1);
+                            app.menu_sel = (app.menu_sel + 1).min(last);
+                        }
                         KeyCode::Up | KeyCode::PageUp => {
                             app.scroll_up = app.scroll_up.saturating_add(if key.code == KeyCode::PageUp { 10 } else { 1 });
                         }
                         KeyCode::Down | KeyCode::PageDown => {
                             app.scroll_up = app.scroll_up.saturating_sub(if key.code == KeyCode::PageDown { 10 } else { 1 });
+                        }
+                        // Tab completes the highlighted command when the menu is
+                        // open; otherwise it cycles between chats.
+                        KeyCode::Tab if selected_command(&app).is_some() => {
+                            if let Some(cmd) = selected_command(&app) {
+                                app.input = format!("/{} ", cmd.name);
+                                app.menu_sel = 0;
+                            }
                         }
                         KeyCode::Tab | KeyCode::BackTab => {
                             let n = app.chats.len();
@@ -503,6 +651,52 @@ fn draw(f: &mut ratatui::Frame, session: &Session, app: &App) {
     let cursor_x = inner.x + 2 + app.input.chars().count() as u16;
     f.set_cursor_position((cursor_x.min(inner.right().saturating_sub(1)), inner.y));
 
+    // Command menu: when the user is typing a `/command`, float the matching
+    // commands just above the input box so they can pick instead of memorizing.
+    let matches = command_matches(app);
+    if !matches.is_empty() {
+        let sel = app.menu_sel.min(matches.len() - 1);
+        let items: Vec<ListItem> = matches
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                let selected = i == sel;
+                let name_style = if selected {
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(TEXT)
+                };
+                let line = Line::from(vec![
+                    Span::styled(format!(" {:<14}", c.usage), name_style),
+                    Span::styled(format!("{} ", c.desc), Style::default().fg(DIM)),
+                ]);
+                let mut item = ListItem::new(line);
+                if selected {
+                    item = item.style(Style::default().bg(SURFACE));
+                }
+                item
+            })
+            .collect();
+        // Height = rows + borders, clamped to the space above the input.
+        let h = (matches.len() as u16 + 2).min(rows[1].y.saturating_sub(rows[0].y));
+        let area = Rect {
+            x: cols[1].x,
+            y: rows[1].y.saturating_sub(h),
+            width: cols[1].width,
+            height: h,
+        };
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(ACCENT))
+            .title(Span::styled(
+                " commands · ↑/↓ select · Enter run · Tab complete ",
+                Style::default().fg(DIM),
+            ));
+        f.render_widget(Clear, area);
+        f.render_widget(List::new(items).block(block), area);
+    }
+
     // Status bar: state on the left, key hints on the right.
     let queued = session.store.outbox_list().map(|o| o.len()).unwrap_or(0);
     let mut left: Vec<Span> = Vec::new();
@@ -523,7 +717,7 @@ fn draw(f: &mut ratatui::Frame, session: &Session, app: &App) {
     if let Some(n) = &app.notice {
         left.push(Span::styled(format!(" {n} "), Style::default().fg(RED)));
     }
-    let hints = " Tab chats · ↑/↓ scroll · /img <path> · /clear · Enter send · Esc quit ";
+    let hints = " Tab chats · ↑/↓ scroll · Esc quit ";
     let used: usize = left
         .iter()
         .map(|s| s.content.chars().count())
@@ -546,6 +740,53 @@ fn expand_tilde(p: &str) -> std::path::PathBuf {
         }
     }
     std::path::PathBuf::from(p)
+}
+
+/// Add a member to the open group chat, mirroring `yapayapa groups add-member`:
+/// call the server, rotate + re-cache the group key, and return a status line.
+/// The queued key envelopes are flushed by the caller. Errors out for a direct
+/// chat (nothing to add someone to).
+async fn add_member_in_chat(
+    session: &Session,
+    chat: &ChatEntry,
+    user: &str,
+) -> anyhow::Result<String> {
+    if !chat.is_group {
+        anyhow::bail!("/add only works in a group chat");
+    }
+    let gid: Uuid = chat.id.parse()?;
+    let info = session
+        .api
+        .add_group_member(gid, user)
+        .await
+        .map_err(|e| anyhow::anyhow!("add failed: {e}"))?;
+    let queued = crate::groups::rotate_group_key(session, &info)?;
+    Ok(format!(
+        "added @{user}; rotated key to epoch {} ({queued} key message(s) queued)",
+        info.key_epoch
+    ))
+}
+
+/// One-line summary of the open group's members, from the local cache.
+fn group_members_line(session: &Session, chat: &ChatEntry) -> anyhow::Result<String> {
+    if !chat.is_group {
+        anyhow::bail!("/members only works in a group chat");
+    }
+    let gid: Uuid = chat.id.parse()?;
+    let me = session.keystore.profile.user_id;
+    let mut names = vec!["you".to_string()];
+    for id in session.store.cached_group_members(gid)? {
+        if id == me {
+            continue;
+        }
+        let name = session
+            .store
+            .contact_by_id(id)?
+            .map(|c| format!("@{}", c.username))
+            .unwrap_or_else(|| id.to_string());
+        names.push(name);
+    }
+    Ok(format!("members ({}): {}", names.len(), names.join(", ")))
 }
 
 /// Encrypt and send an image to the chat that is currently open, reusing the
