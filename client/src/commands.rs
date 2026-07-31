@@ -77,6 +77,16 @@ pub async fn register_account(
 }
 
 pub async fn register(config: Config, username: Option<String>) -> anyhow::Result<()> {
+    // Show the rules up front so people don't hit them only after a failed try.
+    println!(
+        "Username: {}-{} characters, a-z 0-9 _ , must start with a letter.",
+        validate::USERNAME_MIN,
+        validate::USERNAME_MAX
+    );
+    println!(
+        "Password: at least {} characters.",
+        validate::PASSWORD_MIN
+    );
     let username = match username {
         Some(u) => u,
         None => read_line("Username: ")?,

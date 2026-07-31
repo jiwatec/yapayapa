@@ -62,11 +62,35 @@ case ":$PATH:" in
     ;;
   *)
     echo
-    echo "NOTE: $INSTALL_DIR is not on your PATH yet. Add it:"
-    echo "  bash/zsh:  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.profile && source ~/.profile"
-    echo "  fish:      fish_add_path ~/.local/bin"
+    echo "$INSTALL_DIR is not on your PATH yet — adding it for you."
+    line="export PATH=\"$INSTALL_DIR:\$PATH\""
+    updated=""
+    case "$(basename "${SHELL:-bash}")" in
+      fish)
+        # Universal path persists across sessions without editing config.
+        if command -v fish >/dev/null 2>&1 && fish -c "fish_add_path -U $INSTALL_DIR" 2>/dev/null; then
+          updated="fish (universal path)"
+        else
+          rc="$HOME/.config/fish/config.fish"
+          mkdir -p "$(dirname "$rc")"
+          grep -qsF "$INSTALL_DIR" "$rc" || printf '\nfish_add_path %s\n' "$INSTALL_DIR" >> "$rc"
+          updated="$rc"
+        fi
+        ;;
+      zsh)
+        rc="$HOME/.zshrc"
+        grep -qsF "$INSTALL_DIR" "$rc" || printf '\n%s\n' "$line" >> "$rc"
+        updated="$rc"
+        ;;
+      *)
+        rc="$HOME/.bashrc"; [ -f "$rc" ] || rc="$HOME/.profile"
+        grep -qsF "$INSTALL_DIR" "$rc" || printf '\n%s\n' "$line" >> "$rc"
+        updated="$rc"
+        ;;
+    esac
+    echo "Updated $updated."
     echo
-    echo "Then run:  yapayapa register"
-    echo "(or run it directly right now: $INSTALL_DIR/$BIN register)"
+    echo "Open a new terminal (or run 'source $updated'), then:  yapayapa register"
+    echo "Or run it right now without restarting:  $INSTALL_DIR/$BIN register"
     ;;
 esac
