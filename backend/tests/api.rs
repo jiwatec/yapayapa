@@ -767,7 +767,10 @@ async fn owner_leaving_transfers_to_oldest_member() {
     // Owner leaves (self-remove) -> ownership should pass to member1.
     let resp = s
         .client
-        .delete(format!("{}/api/groups/{}/members/owner", s.base, group.group_id))
+        .delete(format!(
+            "{}/api/groups/{}/members/owner",
+            s.base, group.group_id
+        ))
         .bearer_auth(&owner.auth.token)
         .send()
         .await
@@ -802,7 +805,10 @@ async fn last_owner_leaving_deletes_the_group() {
     // Owner is the only member; leaving deletes the group.
     let resp = s
         .client
-        .delete(format!("{}/api/groups/{}/members/solo", s.base, group.group_id))
+        .delete(format!(
+            "{}/api/groups/{}/members/solo",
+            s.base, group.group_id
+        ))
         .bearer_auth(&owner.auth.token)
         .send()
         .await

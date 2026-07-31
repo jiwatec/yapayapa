@@ -98,17 +98,22 @@ yapayapa chat bob --plain         # line-based chat instead of the UI
 yapayapa chat <group-id>          # groups open with plain `chat` too
 yapayapa peers list               # discover LAN peers (opt-in, on demand)
 yapayapa peers connect bob        # deliver directly over LAN, no internet
-yapayapa attachments list         # received images (work in progress)
-yapayapa open-image <message-id>  # open a received image (work in progress)
+yapayapa attachments list         # list received images
+yapayapa open-image <message-id>  # open a received image (or use /images in a chat)
 ```
 
 Long forms (`contacts add`, `outbox retry`, `groups create`, …) still work.
+
+On the home screen (bare `yapayapa`), press `Ctrl+P` for a searchable command
+palette or `Tab` for the full command list — both let you run any command,
+each with a one-line description, without memorizing the syntax.
 
 ## Inside a chat
 
 The full-screen chat window right-aligns your own messages, groups consecutive
 messages from the same person, and gives every member of a group their own
-color so it reads like a normal chat.
+color so it reads like a normal chat. A message you send stays faint until the
+relay confirms it, then brightens with a `✓` (`✓✓` once delivered).
 
 Type `/` to pop up a command menu — the commands available in this chat, with a
 short description each. Arrow keys to pick, `Enter` to run, `Tab` to complete:
@@ -117,14 +122,17 @@ short description each. Arrow keys to pick, `Enter` to run, `Tab` to complete:
 /img <path>    # send an encrypted image to this chat
 /images        # browse received images, Enter opens one in your viewer
 /verify        # compare fingerprints and mark verified   (1:1 chats only)
-/remove        # remove this contact and clear the chat   (1:1 chats only)
+/remove        # remove this contact + wipe the chat, confirm twice   (1:1 only)
 /add <user>    # add someone to this group                (group chats only)
 /remove <user> # remove someone from this group           (group chats only)
 /members       # list this group's members                (group chats only)
-/leave         # leave this group                         (group chats only)
-/delete        # delete this group for everyone           (owner only)
-/clear         # clear this chat's local history           (type /clear twice to confirm)
+/leave         # leave this group, confirm twice          (group chats only)
+/delete        # delete this group for everyone, confirm twice        (owner only)
+/clear         # clear this chat's local history, confirm twice
 ```
+
+Adding, removing and deleting take effect for everyone; `/verify`, `/images`
+and `/clear` are local to your device.
 
 Keys:
 
@@ -136,7 +144,9 @@ Keys:
 | `Esc`    | cancel a reply, then leave the chat                                |
 
 Group membership and keys sync automatically when you open a group, so new
-members show up without any manual step.
+members show up without any manual step. Only the owner and admins can add or
+remove members; when the owner leaves, ownership passes to the oldest remaining
+member (or the group is deleted if they were the last one).
 
 ## How offline works
 

@@ -586,8 +586,10 @@ impl LocalStore {
     /// metadata, cached members, and content keys.
     pub fn delete_group_local(&self, group_id: Uuid) -> anyhow::Result<()> {
         let gid = group_id.to_string();
-        self.conn
-            .execute("DELETE FROM group_members_cache WHERE group_id = ?1", params![gid])?;
+        self.conn.execute(
+            "DELETE FROM group_members_cache WHERE group_id = ?1",
+            params![gid],
+        )?;
         self.conn
             .execute("DELETE FROM group_keys WHERE group_id = ?1", params![gid])?;
         self.conn
@@ -689,7 +691,10 @@ mod tests {
     }
 
     fn text(body: &str) -> ChatContent {
-        ChatContent::Text { body: body.into(), reply_to: None }
+        ChatContent::Text {
+            body: body.into(),
+            reply_to: None,
+        }
     }
 
     #[test]

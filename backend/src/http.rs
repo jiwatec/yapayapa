@@ -510,7 +510,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/contacts", post(add_contact).get(list_contacts))
         .route("/api/contacts/{selector}", delete(remove_contact))
         .route("/api/groups", post(create_group).get(list_groups))
-        .route("/api/groups/{group_id}", get(get_group).delete(delete_group))
+        .route(
+            "/api/groups/{group_id}",
+            get(get_group).delete(delete_group),
+        )
         .route("/api/groups/{group_id}/members", post(add_member))
         .route(
             "/api/groups/{group_id}/members/{selector}",

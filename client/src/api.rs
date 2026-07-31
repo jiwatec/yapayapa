@@ -148,7 +148,10 @@ impl Api {
 
     pub async fn remove_contact(&self, selector: &str) -> Result<(), ApiErr> {
         let resp = self
-            .req(reqwest::Method::DELETE, &format!("/api/contacts/{selector}"))
+            .req(
+                reqwest::Method::DELETE,
+                &format!("/api/contacts/{selector}"),
+            )
             .send()
             .await
             .map_err(|e| ApiErr::Offline(e.to_string()))?;

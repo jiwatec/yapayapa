@@ -117,7 +117,11 @@ pub(crate) struct TermGuard;
 impl TermGuard {
     pub(crate) fn new() -> anyhow::Result<Self> {
         enable_raw_mode()?;
-        execute!(std::io::stdout(), EnterAlternateScreen, EnableBracketedPaste)?;
+        execute!(
+            std::io::stdout(),
+            EnterAlternateScreen,
+            EnableBracketedPaste
+        )?;
         Ok(Self)
     }
 }
@@ -125,7 +129,11 @@ impl TermGuard {
 impl Drop for TermGuard {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-        let _ = execute!(std::io::stdout(), LeaveAlternateScreen, DisableBracketedPaste);
+        let _ = execute!(
+            std::io::stdout(),
+            LeaveAlternateScreen,
+            DisableBracketedPaste
+        );
     }
 }
 
@@ -298,7 +306,11 @@ fn command_matches(app: &App) -> Vec<&'static SlashCmd> {
     SLASH_COMMANDS
         .iter()
         .filter(|c| {
-            let ok_here = if is_group { !c.direct_only } else { !c.group_only };
+            let ok_here = if is_group {
+                !c.direct_only
+            } else {
+                !c.group_only
+            };
             ok_here && c.name.starts_with(prefix)
         })
         .collect()
@@ -1023,7 +1035,11 @@ fn draw(f: &mut ratatui::Frame, session: &Session, app: &App) {
             )));
         }
         // Quoted line above a reply, aligned with the message it belongs to.
-        if let ChatContent::Text { reply_to: Some(qid), .. } = &m.content {
+        if let ChatContent::Text {
+            reply_to: Some(qid),
+            ..
+        } = &m.content
+        {
             let quote = match quote_preview(session, &app.messages, *qid) {
                 Some((who, snippet)) => format!("↳ {who}: {snippet}"),
                 None => "↳ (message)".to_string(),
@@ -1104,7 +1120,10 @@ fn draw(f: &mut ratatui::Frame, session: &Session, app: &App) {
 
     // Input: prompt-style with a live cursor.
     // When a reply is pending, the input box title shows what it will quote.
-    let input_title = match app.reply_to.and_then(|id| quote_preview(session, &app.messages, id)) {
+    let input_title = match app
+        .reply_to
+        .and_then(|id| quote_preview(session, &app.messages, id))
+    {
         Some((who, snippet)) => Span::styled(
             format!(" ↳ replying to {who}: {snippet} — Esc to cancel "),
             Style::default().fg(ACCENT),
@@ -1183,12 +1202,18 @@ fn draw(f: &mut ratatui::Frame, session: &Session, app: &App) {
     if let Some(vp) = &app.verify {
         let lines = vec![
             Line::from(Span::styled("your fingerprint", Style::default().fg(DIM))),
-            Line::from(Span::styled(format!("  {}", vp.mine), Style::default().fg(TEXT))),
+            Line::from(Span::styled(
+                format!("  {}", vp.mine),
+                Style::default().fg(TEXT),
+            )),
             Line::from(Span::styled(
                 format!("@{}'s fingerprint", vp.username),
                 Style::default().fg(DIM),
             )),
-            Line::from(Span::styled(format!("  {}", vp.theirs), Style::default().fg(TEXT))),
+            Line::from(Span::styled(
+                format!("  {}", vp.theirs),
+                Style::default().fg(TEXT),
+            )),
             Line::from(""),
             Line::from(Span::styled(
                 "Compare these over a TRUSTED channel (in person or a call).",
@@ -1197,7 +1222,10 @@ fn draw(f: &mut ratatui::Frame, session: &Session, app: &App) {
             Line::from(""),
             Line::from(vec![
                 Span::styled("Do they match exactly?  ", Style::default().fg(TEXT)),
-                Span::styled("[y]", Style::default().fg(GREEN).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "[y]",
+                    Style::default().fg(GREEN).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" yes   ", Style::default().fg(DIM)),
                 Span::styled("[n]", Style::default().fg(RED).add_modifier(Modifier::BOLD)),
                 Span::styled(" no", Style::default().fg(DIM)),
@@ -1215,13 +1243,20 @@ fn draw(f: &mut ratatui::Frame, session: &Session, app: &App) {
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             ));
         f.render_widget(Clear, area);
-        f.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), area);
+        f.render_widget(
+            Paragraph::new(lines)
+                .block(block)
+                .wrap(Wrap { trim: false }),
+            area,
+        );
     }
 
     // /images picker: list of received images, centered.
     if let Some(picker) = &app.images {
         let sel = picker.sel.min(picker.items.len().saturating_sub(1));
-        let h = (picker.items.len() as u16 + 2).min(cols[1].height.saturating_sub(2)).max(3);
+        let h = (picker.items.len() as u16 + 2)
+            .min(cols[1].height.saturating_sub(2))
+            .max(3);
         let area = centered_rect(cols[1], 72, h);
         let items: Vec<ListItem> = picker
             .items
@@ -1459,7 +1494,12 @@ fn image_items(session: &Session, messages: &[LocalMessage]) -> Vec<(Uuid, Strin
             };
             out.push((
                 m.message_id,
-                format!("{} · {} · {}", m.sent_at.format("%m-%d %H:%M"), who, filename),
+                format!(
+                    "{} · {} · {}",
+                    m.sent_at.format("%m-%d %H:%M"),
+                    who,
+                    filename
+                ),
             ));
         }
     }

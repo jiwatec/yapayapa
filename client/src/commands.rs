@@ -83,10 +83,7 @@ pub async fn register(config: Config, username: Option<String>) -> anyhow::Resul
         validate::USERNAME_MIN,
         validate::USERNAME_MAX
     );
-    println!(
-        "Password: at least {} characters.",
-        validate::PASSWORD_MIN
-    );
+    println!("Password: at least {} characters.", validate::PASSWORD_MIN);
     let username = match username {
         Some(u) => u,
         None => read_line("Username: ")?,
