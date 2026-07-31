@@ -154,6 +154,15 @@ pub async fn run(session: &Session, target: ChatTarget) -> anyhow::Result<()> {
         None => None,
     };
 
+    // Refresh group membership on open so freshly-added members/keys pull
+    // automatically (no manual `sync` + `groups info`). Best-effort; offline
+    // just keeps the existing cache. Reload the active chat's history after so
+    // any newly-pinned members are reflected right away.
+    if app.online {
+        crate::groups::sync_all_groups(session).await;
+        app.messages = session.store.history(&app.active_chat().id.clone(), 200)?;
+    }
+
     let _guard = TermGuard::new()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(std::io::stdout()))?;
     let mut events = EventStream::new();
@@ -175,7 +184,7 @@ pub async fn run(session: &Session, target: ChatTarget) -> anyhow::Result<()> {
                 }
                 if let Event::Paste(data) = ev {
                     // Collapse newlines so a multi-line paste stays one message line.
-                    let cleaned = data.replace('\n', " ").replace('\r', " ");
+                    let cleaned = data.replace(['\n', '\r'], " ");
                     app.input.push_str(&cleaned);
                     continue;
                 }

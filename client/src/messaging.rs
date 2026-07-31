@@ -178,17 +178,27 @@ pub async fn handle_incoming(session: &Session, wire: &WireMessage) -> anyhow::R
             session
                 .store
                 .store_group_key(group_id, epoch, &SymmetricKey(key_bytes))?;
-            if session.store.group_name(group_id)?.is_none() {
-                let name = match session.api.group_info(group_id).await {
-                    Ok(info) => info.name,
-                    Err(_) => format!("group {group_id}"),
-                };
-                session.store.upsert_group(group_id, &name, epoch)?;
-            } else {
-                let name = session.store.group_name(group_id)?.unwrap();
-                session.store.upsert_group(group_id, &name, epoch)?;
+            // Pull full membership when online so the group is immediately
+            // usable — members cached and identities pinned — not just named.
+            // Without this the group appears but shows "no other members yet"
+            // until a manual `groups info`. Best-effort: a single unverifiable
+            // member (cache_group logs and returns Err) or being offline still
+            // leaves the key installed and a bare group row present.
+            match session.api.group_info(group_id).await {
+                Ok(info) => {
+                    // cache_group upserts the group first, so even a partial
+                    // failure leaves it named and listed.
+                    if let Err(e) = crate::groups::cache_group(session, &info) {
+                        tracing::warn!(%group_id, error = %e, "group membership sync incomplete");
+                    }
+                }
+                Err(_) if session.store.group_name(group_id)?.is_none() => {
+                    session
+                        .store
+                        .upsert_group(group_id, &format!("group {group_id}"), epoch)?;
+                }
+                Err(_) => {}
             }
-            let _ = (group_id, epoch);
             Ok(Incoming::GroupKeyInstalled)
         }
         ChatContent::GroupCiphertext {

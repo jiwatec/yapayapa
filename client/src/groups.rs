@@ -27,6 +27,27 @@ pub fn cache_group(session: &Session, info: &GroupInfo) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Best-effort refresh of every locally-known group's membership + metadata
+/// from the server, so opening the app pulls new members/keys automatically
+/// instead of leaving a stale cache that reads "no other members yet" until a
+/// manual `groups info`. Individual failures (offline, group removed, an
+/// unverifiable member) are skipped so one bad group can't block the rest.
+/// Returns how many groups synced cleanly.
+pub async fn sync_all_groups(session: &Session) -> usize {
+    let Ok(groups) = session.store.list_groups() else {
+        return 0;
+    };
+    let mut synced = 0;
+    for (gid, _, _) in groups {
+        if let Ok(info) = session.api.group_info(gid).await {
+            if cache_group(session, &info).is_ok() {
+                synced += 1;
+            }
+        }
+    }
+    synced
+}
+
 fn pin_contact(session: &Session, user: &UserPublic) -> anyhow::Result<()> {
     if user.user_id == session.keystore.profile.user_id {
         return Ok(());
